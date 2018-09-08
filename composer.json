@@ -1,0 +1,34 @@
+{
+    "name": "dreadnaut/phpstunts",
+    "description": "phpStunts is a set of tools to read and handle information related to Stunts/4D Sport Driving data files.",
+    "type": "library",
+
+    "authors": [
+        {
+            "name": "dreadnaut",
+            "email": "dreadnaut@gmail.com"
+        }
+    ],
+    
+    "autoload": {
+        "psr-4": { "phpStunts\\": [ "src/" ] }
+    },
+    
+    "require": {
+    },
+
+    "require-dev": {
+        "phpunit/phpunit": "^7.2",
+        "mikey179/vfsStream": "^1.6",
+        "phpstan/phpstan": "^0.10.2",
+        "squizlabs/php_codesniffer": "^3.3"
+    },
+
+    "scripts": {
+      "test": [
+        "phpcs",
+        "phpstan analyse",
+        "phpunit"
+      ]
+    }
+}
