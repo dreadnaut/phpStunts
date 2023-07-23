@@ -73,9 +73,9 @@ describe('attributes', function() {
 
         it('works with "dropped frame" replays', function() {
             $replay = Replay::load(sample(REPLAY_DROPPED_FRAME));
-            $lapTime = $replay->recording->time - $replay->recording->granularity;
+            $lapTime = $replay->recording->time - 100;
             expect($replay->time)->toEqual($lapTime);
-        })->skip();
+        });
     });
 
     describe('version', function() {

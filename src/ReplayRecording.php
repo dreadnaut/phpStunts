@@ -16,7 +16,7 @@ class ReplayRecording
 
     public function seemsComplete() : bool
     {
-        $lastSecond = substr($this->keyboardEvents, 0 - $this->granularity);
+        $lastSecond = substr($this->keyboardEvents, 0 - $this->granularity + 1);
         return strlen(trim($lastSecond, "\0")) === 0;
     }
 }
