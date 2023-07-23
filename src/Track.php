@@ -1,10 +1,10 @@
 <?php
+declare(strict_types=1);
 
-namespace phpStunts;
+namespace PhpStunts;
 
 class Track
 {
-
     /**
      * Standard values for the track horizon byte.
      */
@@ -20,158 +20,150 @@ class Track
     const RESERVED_DEFAULT = 0;
 
     /**
-     * Size in bytes for each of the track maps.
-     */
-    const SIZE_LAYOUT = 900;
-    const SIZE_TERRAIN = 900;
-
-    /**
-     * @var string  Road and scenery data.
-     */
-    private $layout;
-
-    /**
-     * @var int  One of the predefined horizon types.
-     */
-    private $horizon;
-
-    /**
-     * @var string  Terrain data.
-     */
-    private $terrain;
-
-    /**
-     * @var int  Reserved byte. Usually zero, but non standard values are used
-     *           by custom editors.
-     */
-    private $reserved;
-
-    /**
-     * @var string  Non-standard data found at the end of the track file.
-     */
-    private $extra;
-
-    /**
-     * Create a new track with the specified horizon and a flat terrain.
      *
-     * @param int $horizon  The horizon to use for the track
-     * @return Track  The new Track object
      */
-    public static function empty($horizon = self::HORIZON_DESERT)
+    const BASE_SIZE = 1802;
+    const MAP_SIZE = 900;
+
+    /**
+     *
+     */
+    public static function load(string $filename) : self
     {
-        return new self(
-            str_repeat("\x00", self::SIZE_LAYOUT),
-            str_repeat("\x00", self::SIZE_TERRAIN),
-            $horizon
+        if (!is_readable($filename)) {
+            throw new \InvalidArgumentException("Cannot read track file: {$filename}");
+        }
+
+        $track = self::decode(file_get_contents($filename) ?: '');
+        $track->name = substr(basename(strtoupper($filename), '.TRK'), 0, 8);
+        return $track;
+    }
+
+    /**
+     *
+     */
+    public static function decode(string $trackData) : self
+    {
+        $size = strlen($trackData);
+
+        if ($size < self::BASE_SIZE) {
+            throw new InvalidTrackException(
+                "The track data is too small: {$size} < " . self::BASE_SIZE
+            );
+        }
+        return new Track(
+            layout: substr($trackData, 0, self::MAP_SIZE),
+            terrain: substr($trackData, self::MAP_SIZE + 1, self::MAP_SIZE),
+            horizon: ord($trackData[self::MAP_SIZE]),
+            reserved: ord($trackData[self::BASE_SIZE - 1]),
+            appended: substr($trackData, self::BASE_SIZE)
         );
     }
 
     /**
-     * Create a new instance and store the given track data.
      *
-     * @param string $layout   900 bytes representing the track layout
-     * @param string $terrain  900 bytes representing the track terrain
-     * @param int $horizon     The horizon to use for the track
-     * @param int $reserved    The value of the track's reserved byte
-     * @param string $extra    Trailing data outside the usual file format
      */
-    public function __construct(
-        $layout,
-        $terrain,
-        $horizon = self::HORIZON_DESERT,
-        $reserved = self::RESERVED_DEFAULT,
-        $extra = ''
+    public static function empty(int $horizon = self::HORIZON_DESERT) : self
+    {
+        return new Track(
+            layout: str_repeat("\x00", self::MAP_SIZE),
+            terrain: str_repeat("\x00", self::MAP_SIZE),
+            horizon: $horizon & 255,
+            reserved: self::RESERVED_DEFAULT
+        );
+    }
+
+    /**
+     *
+     */
+    private function __construct(
+        public string $layout,
+        public string $terrain,
+        public int $horizon = self::HORIZON_DESERT,
+        public int $reserved = self::RESERVED_DEFAULT,
+        public string $appended = '',
+        public string $name = '',
     ) {
-        $this->layout = substr($layout, 0, self::SIZE_LAYOUT);
-        $this->terrain = substr($terrain, 0, self::SIZE_TERRAIN);
+        $this->validateDimensions();
         $this->horizon = $horizon & 255;
         $this->reserved = $reserved & 255;
-        $this->extra = $extra;
     }
 
     /**
-     * Return the track layout data.
      *
-     * @return string
      */
-    public function getLayout()
+    public function normalize() : self
     {
-        return $this->layout;
+        return new Track(
+            $this->layout,
+            $this->terrain,
+            $this->horizon,
+            reserved: self::RESERVED_DEFAULT,
+            appended: ''
+        );
     }
 
     /**
-     * Return the track horizon type.
      *
-     * @return int
      */
-    public function getHorizon()
+    public function truncate() : self
     {
-        return $this->horizon;
+        return new Track(
+            $this->layout,
+            $this->terrain,
+            $this->horizon,
+            $this->reserved,
+            appended: ''
+        );
     }
 
     /**
-     * Return the track terrain data.
      *
-     * @return string
      */
-    public function getTerrain()
+    public function hash() : string
     {
-        return $this->terrain;
+        return sha1($this->encode());
     }
 
     /**
-     * Return the reserved byte of the track.
      *
-     * @return int
      */
-    public function getReserved()
-    {
-        return $this->reserved;
-    }
-
-    /**
-     * Return the trailing data of the file.
-     *
-     * @return string
-     */
-    public function getExtra()
-    {
-        return $this->extra;
-    }
-
-    /**
-     * Return the track data as stored.
-     *
-     * This might include a non-standard reserved byte and trailing data beyond
-     * 1802 bytes.
-     *
-     * @return string
-     */
-    public function getOriginalData()
+    public function encode() : string
     {
         return $this->layout . chr($this->horizon) . $this->terrain
-            . chr($this->reserved) . $this->extra;
+            . chr($this->reserved) . $this->appended;
     }
 
     /**
-     * Return the track data as it would be saved by Stunts.
      *
-     * The reserved byte is set to zero, and there is no trailing data.
-     *
-     * @return string[1802]
      */
-    public function getData()
+    public function save(string $filename) : bool
     {
-        return $this->layout . chr($this->horizon) . $this->terrain . "\x00";
+        try {
+            $written = file_put_contents($filename, $this->encode());
+            return $written !== false;
+        } catch (\Throwable $ex) {
+            return false;
+        }
     }
 
     /**
-     * Return the track hash, calculated on the canonical data.
      *
-     * @return string[40]
      */
-    public function getHash()
+    private function validateDimensions() : void
     {
-        return sha1($this->getData());
+        $layoutSize = strlen($this->layout);
+        if ($layoutSize != self::MAP_SIZE) {
+            throw new \InvalidArgumentException(
+                "Track layout size incorrect: {$layoutSize} < " . self::MAP_SIZE
+            );
+        }
+
+        $terrainSize = strlen($this->terrain);
+        if ($terrainSize != self::MAP_SIZE) {
+            throw new \InvalidArgumentException(
+                "Track terrain size incorrect: {$terrainSize} < " . self::MAP_SIZE
+            );
+        }
     }
 }

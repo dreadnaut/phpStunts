@@ -1,187 +1,197 @@
 <?php
+use PhpStunts\Track;
 
-namespace phpStunts;
+describe('load', function() {
+    it('throws if it cannot read the track file', function() {
+        $filename = 'this-is-not-a-track';
+        expect(fn() => Track::load($filename))
+            ->toThrow("Cannot read track file: {$filename}");
+    });
 
-use org\bovigo\vfs\vfsStream;
-use PHPUnit\Framework\TestCase;
+    it('returns a Track object', function() {
+        $filename = sample(TRACK_DEFAULT);
+        expect(Track::load($filename))
+            ->toBeInstanceOf(Track::class);
+    });
 
-class TrackTest extends TestCase
-{
+    it('uses the capitalized filename as track name', function() {
+        $filename = sample(TRACK_DEFAULT);
+        $track = Track::load($filename);
+        $name = strtoupper(basename($filename, '.trk'));
+        expect($track->name)->toBe($name);
+    });
 
-    const TRACK_STANDARD = 'tests/samples/default.trk';
-    const TRACK_WITH_TRAILING_DATA = 'tests/samples/default-extra.trk';
+    it('truncates the filename to 8 characters', function() {
+        $filename = sample(TRACK_WITH_APPENDED_DATA);
+        $track = Track::load($filename);
+        $name = substr(strtoupper(basename($filename, '.trk')), 0, 8);
+        expect($track->name)->toBe($name);
+    });
+});
 
-    /**
-     * Prepare a string containing the data for a fake track.
-     *
-     * By default, the track follows the standard format and has no trailing
-     * data.
-     */
-    private function prepareSampleData(
-        $layoutChar = 'A',
-        $terrainChar = 'B',
-        $reserved = Track::RESERVED_DEFAULT,
-        $extra = '',
-        $horizon = Track::HORIZON_CITY
-    ) {
-        $layout = str_repeat($layoutChar, Track::SIZE_LAYOUT);
-        $terrain = str_repeat($terrainChar, Track::SIZE_TERRAIN);
-        return $layout . chr($horizon) . $terrain . chr($reserved) . $extra;
-    }
+describe('decode', function() {
+    it('throws if the track is too small', function() {
+        $data = 'this-is-too-short';
+        $size = strlen($data);
+        expect(fn() => Track::decode($data))
+            ->toThrow("The track data is too small: {$size} < " . Track::BASE_SIZE);
+    });
 
-    /**
-     * A new empty track should have no data set, except the horizon value.
-     */
-    public function testEmpty()
-    {
-        $horizon = Track::HORIZON_COUNTRY;
+    it('returns a Track object', function() {
+        $data = sampleData(TRACK_DEFAULT);
+        expect(Track::decode($data))->toBeInstanceOf(Track::class);
+    });
 
-        $track = Track::empty($horizon);
+    it('extracts the track details', function() {
+        $data = sampleData(TRACK_DEFAULT);
+        $track = Track::decode($data);
+        expect($track->layout)->toEqual(substr($data, 0, 900));
+        expect($track->terrain)->toEqual(substr($data, 901, 900));
+        expect($track->horizon)->toEqual(ord($data[900]));
+        expect($track->reserved)->toEqual(ord($data[1801]));
+        expect($track->appended)->toBeEmpty();
+    });
 
-        $this->assertInstanceOf(Track::class, $track);
-        $this->assertEmpty($track->getExtra());
-        $this->assertEquals(0, $track->getReserved());
-        $this->assertEquals($horizon, $track->getHorizon());
-    }
+    it('extracts appended data if present', function() {
+        $data = sampleData(TRACK_WITH_APPENDED_DATA);
+        $track = Track::decode($data);
+        expect($track->appended)->toStartWith('smdf');
+    });
 
-    /**
-     * The canonical data of a standard track matches the file data.
-     */
-    public function testGetData()
-    {
-        $trackData = $this->prepareSampleData();
+    it('does not set a track name', function() {
+        $data = sampleData(TRACK_DEFAULT);
+        $track = Track::decode($data);
+        expect($track->name)->toBeEmpty();
+    });
+});
 
-        $track = TrackLoader::fromData($trackData);
+describe('empty', function() {
+    beforeEach(function() {
+        $this->track = Track::empty();
+    });
 
-        $this->assertEquals($trackData, $track->getData());
-    }
+    it('returns a Track object', function() {
+        expect($this->track)->toBeInstanceOf(Track::class);
+    });
 
-    /**
-     * The canonical data of a non-standard track matches a track with the
-     * same layout, terrain and horizon, but no reserved and extra data.
-     */
-    public function testGetDataWithTrailingData()
-    {
-        $trackCanonical = $this->prepareSampleData('L', 'T');
-        $trackData = $this->prepareSampleData('L', 'T', 151, str_repeat('X', 100));
+    it('returns a track with no elements or terrain features', function() {
+        expect($this->track->layout)->toEqual(str_repeat("\x00", 900));
+    });
 
-        $track = TrackLoader::fromData($trackData);
+    it('returns a track with no hills or water', function() {
+        expect($this->track->terrain)->toEqual(str_repeat("\x00", 900));
+    });
 
-        $this->assertEquals($trackCanonical, $track->getData());
-        $this->assertNotEquals($trackData, $track->getData());
-    }
+    it('returns a track with the desert horizon', function() {
+        expect($this->track->horizon)->toBe(Track::HORIZON_DESERT);
+    });
 
-    /**
-     * The original data of a standard track matches the file data.
-     */
-    public function testGetOriginalData()
-    {
-        $trackData = $this->prepareSampleData();
+    it('returns a track with zero as the reserved byte', function() {
+        expect($this->track->reserved)->toBe(0);
+    });
 
-        $track = TrackLoader::fromData($trackData);
+    it('returns a track without appended data', function() {
+        expect($this->track->appended)->toBeEmpty();
+    });
 
-        $this->assertEquals($trackData, $track->getData());
-    }
+    it('does not set a track name', function() {
+        expect($this->track->name)->toBeEmpty();
+    });
+});
 
-    /**
-     * The original data of a non-standard track also matches the file data.
-     */
-    public function testGetOriginalDataWithTrailingData()
-    {
-        $trackData = $this->prepareSampleData();
+describe('normalize', function() {
+    beforeEach(function() {
+        $this->original = Track::load(sample(TRACK_WITH_APPENDED_DATA));
+        $this->normalized = $this->original->normalize();
+    });
 
-        $track = TrackLoader::fromData($trackData);
+    it('creates a new Track instance', function() {
+        expect($this->normalized)->not->toBe($this->original);
+    });
 
-        $this->assertEquals($trackData, $track->getData());
-    }
+    it('leaves the track as is', function() {
+        expect($this->normalized->layout)->toEqual($this->original->layout);
+        expect($this->normalized->terrain)->toEqual($this->original->terrain);
+        expect($this->normalized->horizon)->toEqual($this->original->horizon);
+    });
 
-    /**
-     * The extra data of a standard track should be empty.
-     */
-    public function testGetExtra()
-    {
-        $trackData = $this->prepareSampleData();
+    it('zeroes the reserved byte', function() {
+        expect($this->original->reserved)->not->toBe(0);
+        expect($this->normalized->reserved)->toBe(0);
+    });
 
-        $track = TrackLoader::fromData($trackData);
+    it('removes any appended data', function() {
+        expect($this->original->appended)->not->toBeEmpty();
+        expect($this->normalized->appended)->toBeEmpty();
+    });
+});
 
-        $this->assertEmpty($track->getExtra());
-    }
+describe('truncate', function() {
+    beforeEach(function() {
+        $this->original = Track::load(sample(TRACK_WITH_APPENDED_DATA));
+        $this->truncated = $this->original->truncate();
+    });
 
-    /**
-     * The extra data of a non-standard track should include all trailing data.
-     */
-    public function testGetExtraWithTrailingData()
-    {
-        $extra = 'extra-data-here';
-        $trackData = $this->prepareSampleData('A', 'B', 123, $extra);
+    it('creates a new Track instance', function() {
+        expect($this->truncated)->not->toBe($this->original);
+    });
 
-        $track = TrackLoader::fromData($trackData);
+    it('leaves the track as is', function() {
+        expect($this->truncated->layout)->toEqual($this->original->layout);
+        expect($this->truncated->terrain)->toEqual($this->original->terrain);
+        expect($this->truncated->horizon)->toEqual($this->original->horizon);
+    });
 
-        $this->assertEquals($extra, $track->getExtra());
-    }
+    it('leaves the reserved byte as is', function() {
+        expect($this->truncated->reserved)->toEqual($this->original->reserved);
+    });
 
-    /**
-     * The hash of a track it's the hash of its canonical data.
-     */
-    public function testGetHash()
-    {
-        $canonicalData = $this->prepareSampleData('X', 'Y');
-        $trackData = $this->prepareSampleData('X', 'Y', 151, 'some-extra-data');
+    it('removes any appended data', function() {
+        expect($this->original->appended)->not->toBeEmpty();
+        expect($this->truncated->appended)->toBeEmpty();
+    });
+});
 
-        $track = TrackLoader::fromData($trackData);
+describe('hash', function() {
+    it('returns the sha1 hash of the encoded data', function() {
+        $data = sampleData(TRACK_DEFAULT);
+        $track = Track::decode($data);
+        expect($track->hash())->toEqual(sha1($data));
+    });
+});
 
-        $this->assertEquals(sha1($canonicalData), $track->getHash());
-    }
+describe('encode', function() {
+    it('returns the contents of a valid track file', function() {
+        $data = sampleData(TRACK_DEFAULT);
+        $track = Track::decode($data);
+        expect($track->encode())->toEqual($data);
+    });
+});
 
-    /**
-     * The method should return the horizon byte from the track data.
-     */
-    public function testGetHorizon()
-    {
-        $horizon = Track::HORIZON_ALPINE;
-        $trackData = $this->prepareSampleData('A', 'B', 0, '', $horizon);
+describe('save', function() {
+    $sample = sample(SAVE_TARGET);
+    $cleanup = fn() => file_exists($sample) and unlink($sample);
+    beforeEach($cleanup);
+    afterEach($cleanup);
 
-        $track = TrackLoader::fromData($trackData);
+    beforeEach(function() {
+        $this->trackData = sampleData(TRACK_WITH_APPENDED_DATA);
+        $this->track = Track::decode($this->trackData);
+    });
 
-        $this->assertEquals($horizon, $track->getHorizon());
-    }
+    it('saves the encoded data to the specified file', function() {
+        $this->track->save(sample(SAVE_TARGET));
+        $savedData = sampleData(SAVE_TARGET);
+        expect($savedData)->toEqual($this->trackData);
+    });
 
-    /**
-     * The method should return the reserved byte from the track data.
-     */
-    public function testGetReserved()
-    {
-        $reserved = 152;
-        $trackData = $this->prepareSampleData('A', 'B', $reserved);
+    it('returns true if it can save the file', function() {
+        $success = $this->track->save(sample(SAVE_TARGET));
+        expect($success)->toBeTrue();
+    });
 
-        $track = TrackLoader::fromData($trackData);
-
-        $this->assertEquals($reserved, $track->getReserved());
-    }
-
-    /**
-     * The method should return the layout part of the track data.
-     */
-    public function testGetLayout()
-    {
-        $trackData = $this->prepareSampleData('L', 'x');
-        $layout = str_repeat('L', Track::SIZE_LAYOUT);
-
-        $track = TrackLoader::fromData($trackData);
-
-        $this->assertEquals($layout, $track->getLayout());
-    }
-
-    /**
-     * The method should return the terrain part of the track data.
-     */
-    public function testGetTerrain()
-    {
-        $trackData = $this->prepareSampleData('x', 'T');
-        $terrain = str_repeat('T', Track::SIZE_TERRAIN);
-
-        $track = TrackLoader::fromData($trackData);
-
-        $this->assertEquals($terrain, $track->getTerrain());
-    }
-}
+    it('returns false if it cannot save the file', function() {
+        $success = $this->track->save('');
+        expect($success)->toBeFalse();
+    });
+});

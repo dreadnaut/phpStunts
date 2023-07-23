@@ -1,264 +1,92 @@
 <?php
+use PhpStunts\Replay;
+use PhpStunts\Track;
 
-namespace phpStunts;
+describe('load', function() {
+    it('returns a Replay', function() {
+        $replay = Replay::load(sample(REPLAY_DEFAULT));
+        expect($replay)->toBeInstanceOf(Replay::class);
+    });
+});
 
-use PHPUnit\Framework\TestCase;
+describe('decode', function() {
+    it('returns a Replay', function() {
+        $replay = Replay::decode(sampleData(REPLAY_DEFAULT));
+        expect($replay)->toBeInstanceOf(Replay::class);
+    });
+});
 
-class ReplayTest extends TestCase
-{
+describe('attributes', function() {
+    describe('car', function() {
+        it('describes the player\'s car', function() {
+            $replay = Replay::load(sample(REPLAY_DEFAULT));
+            expect($replay->car->name)->toBe('P962');
+            expect($replay->car->color)->toBe(3);
+            expect($replay->car->transmission)->toBe(0);
+        });
+    });
 
-    /**
-     * Various sample files used in the tests below.
-     */
-    const REPLAY_SAMPLE = 'tests/samples/vs-skid.rpl';
-    const REPLAY_SAMPLE_TIME = 85;
-    const REPLAY_INCOMPLETE = 'tests/samples/default-incomplete.rpl';
-    const REPLAY_NO_OPPONENT = 'tests/samples/vancouvr-1.1.rpl';
-    const REPLAY_VERSION_10 = 'tests/samples/funhills-1.0.rpl';
-    const REPLAY_VERSION_11 = 'tests/samples/vancouvr-1.1.rpl';
-    const TRACK_FOR_REPLAY_VERSION_11 = 'tests/samples/vancouvr.trk';
+    describe('opponent', function() {
+        it('contains the opponent type', function() {
+            $replay = Replay::load(sample(REPLAY_DEFAULT));
+            expect($replay->opponent)->toBe(6);
+        });
+    });
 
-    /**
-     * The sample replay used for most tests.
-     */
-    protected $replay;
+    describe('opponentCar', function() {
+        it('describe the opponent\'s car', function() {
+            $replay = Replay::load(sample(REPLAY_DEFAULT));
+            expect($replay->opponentCar->name)->toBe('PMIN');
+            expect($replay->opponentCar->color)->toBe(2);
+            expect($replay->opponentCar->transmission)->toBe(1);
+        });
+    });
 
-    /**
-     * Called before each test.
-     */
-    protected function setUp()
-    {
-        $this->replay = (new ReplayLoader)->fromFile(self::REPLAY_SAMPLE);
-    }
+    describe('track', function() {
+        it('returns a Track object', function() {
+            $replay = Replay::load(sample(REPLAY_DEFAULT));
+            expect($replay->track)->toBeInstanceOf(Track::class);
+        });
 
-    /**
-     * Return a slice of the sample replay file.
-     */
-    private function sliceSample($start, $length = null)
-    {
-        $length = $length ?: filesize(self::REPLAY_SAMPLE) - $start;
+        it('contains the replay track', function() {
+            $replay = Replay::load(sample(REPLAY_DEFAULT));
+            expect($replay->track->horizon)->toBe(1);
+        });
 
-        return substr(file_get_contents(self::REPLAY_SAMPLE), $start, $length);
-    }
+        it('extracts the track name from the replay', function() {
+            $replay = Replay::load(sample(REPLAY_DEFAULT));
+            expect($replay->track->name)->toBe('DEFAULT');
+        });
+    });
 
-    /**
-     * The method should correctly identify version 1.0.
-     */
-    public function testGetVersionWith10()
-    {
-        $replay = (new ReplayLoader)->fromFile(self::REPLAY_VERSION_10);
-        $this->assertEquals(
-            Replay::VERSION_10,
-            $replay->getVersion()
-        );
-    }
+    describe('time', function() {
+        it('returns the recording time for incomplete replays', function() {
+            $replay = Replay::load(sample(REPLAY_INCOMPLETE));
+            expect($replay->time)->toEqual($replay->recording->time);
+        });
 
-    /**
-     * The method should correctly identify version 1.1.
-     */
-    public function testIsVersion11()
-    {
-        $replay = (new ReplayLoader)->fromFile(self::REPLAY_VERSION_11);
-        $this->assertEquals(
-            Replay::VERSION_11,
-            $replay->getVersion()
-        );
-    }
+        it('returns the lap time for replays that seem complete', function() {
+            $replay = Replay::load(sample(REPLAY_DEFAULT));
+            $lapTime = $replay->recording->time - 100;
+            expect($replay->time)->toEqual($lapTime);
+        });
 
-    /**
-     * The method should return the correct car information.
-     */
-    public function testGetCar()
-    {
-        $expectedCar = (object) [
-            'name' => 'P962',
-            'color' => 3,
-            'transmission' => 0,
-        ];
+        it('works with "dropped frame" replays', function() {
+            $replay = Replay::load(sample(REPLAY_DROPPED_FRAME));
+            $lapTime = $replay->recording->time - $replay->recording->granularity;
+            expect($replay->time)->toEqual($lapTime);
+        })->skip();
+    });
 
-        $car = $this->replay->getCar();
+    describe('version', function() {
+        it('returns 1.0 for 1.0 replays', function() {
+            $replay = Replay::load(sample(REPLAY_10));
+            expect($replay->version)->toBe('1.0');
+        });
 
-        $this->assertEquals($expectedCar, $car);
-    }
-
-    /**
-     * The method should return true for replays that have an opponent.
-     */
-    public function testHasOpponent()
-    {
-        $this->assertTrue($this->replay->hasOpponent());
-    }
-
-    /**
-     * The method should return false for replays that don't have an opponent.
-     */
-    public function testHasOpponentWithoutOpponent()
-    {
-        $replay = (new ReplayLoader)->fromFile(self::REPLAY_NO_OPPONENT);
-        $this->assertFalse($replay->hasOpponent());
-    }
-
-    /**
-     * The method should return type and name for the replay opponent.
-     */
-    public function testGetOpponent()
-    {
-        $expectedOpponent = (object) [
-            'type' => Replay::OPPONENT_SKID,
-            'name' => Replay::OPPONENTS[Replay::OPPONENT_SKID],
-        ];
-
-        $opponent = $this->replay->getOpponent();
-
-        $this->assertEquals($expectedOpponent, $opponent);
-    }
-
-    /**
-     * If no opponent was set, the method should return 'None'.
-     */
-    public function testGetOpponentWithoutOpponent()
-    {
-        $expectedOpponent = (object) [
-            'type' => Replay::OPPONENT_NONE,
-            'name' => Replay::OPPONENTS[Replay::OPPONENT_NONE],
-        ];
-
-        $replay = (new ReplayLoader)->fromFile(self::REPLAY_NO_OPPONENT);
-        $opponent = $replay->getOpponent();
-
-        $this->assertEquals($expectedOpponent, $opponent);
-    }
-
-    /**
-     * The method should return the details of the opponent's car.
-     */
-    public function testGetOpponentCar()
-    {
-        $expectedCar = (object) [
-            'name' => 'PMIN',
-            'color' => 2,
-            'transmission' => 1,
-        ];
-
-        $car = $this->replay->getOpponentCar();
-
-        $this->assertEquals($expectedCar, $car);
-    }
-
-    /**
-     * If no opponent was set, the record should contain empty values.
-     */
-    public function testGetOpponentCarWithoutOpponent()
-    {
-        $replay = (new ReplayLoader)->fromFile(self::REPLAY_NO_OPPONENT);
-
-        $expectedCar = (object) [
-            'name' => Replay::NO_OPPONENT_CAR,
-            'color' => 0,
-            'transmission' => 0,
-        ];
-
-        $car = $replay->getOpponentCar();
-
-        $this->assertEquals($expectedCar, $car);
-    }
-
-    /**
-     * The method should return a record with keyboard data.
-     */
-    public function testGetKeyboardEvents()
-    {
-        $expectedRecording = (object) [
-            'granularity' => 20,
-            'keyboardEvents' => $this->sliceSample(0x1C + 0x70A),
-            'length' => 1700,
-        ];
-
-        $recording = $this->replay->getKeyboardEvents();
-
-        $this->assertEquals($expectedRecording, $recording);
-    }
-
-    /**
-     * The method should return the length of the keyboard data.
-     */
-    public function testGetRecordedTime()
-    {
-        $time = $this->replay->getRecordedTime();
-
-        $this->assertEquals(self::REPLAY_SAMPLE_TIME, $time);
-    }
-
-    /**
-     * For complete replays, the method should remove one second from the
-     * recorded time.
-     */
-    public function testGetTime()
-    {
-        $time = $this->replay->getTime();
-
-        $this->assertEquals(self::REPLAY_SAMPLE_TIME - 1, $time);
-    }
-
-    /**
-     * For incomplete replays, the method should return the recorded time.
-     */
-    public function testGetTimeWithIncomplete()
-    {
-        $replay = (new ReplayLoader)->fromFile(self::REPLAY_INCOMPLETE);
-
-        $this->assertEquals(
-            $replay->getRecordedTime(),
-            $replay->getTime()
-        );
-    }
-
-    /**
-     * The method should return a Track instance for the replay track.
-     */
-    public function testGetTrack()
-    {
-        $track = $this->replay->getTrack();
-
-        $this->assertInstanceOf(Track::class, $track);
-    }
-
-    /**
-     * The method should return the SHA1 hash of the track data.
-     */
-    public function testGetTrackHash()
-    {
-        $replay = (new ReplayLoader)->fromFile(self::REPLAY_VERSION_11);
-
-        $this->assertEquals(
-            sha1_file(self::TRACK_FOR_REPLAY_VERSION_11),
-            $replay->getTrackHash()
-        );
-    }
-
-    /**
-     * The method should return the track name stored in the replay.
-     */
-    public function testGetTrackName()
-    {
-        $this->assertEquals('DEFAULT', $this->replay->getTrackName());
-    }
-
-    /**
-     * The method should return false for replay that cannot be considered
-     * incomplete.
-     */
-    public function testIsIncomplete()
-    {
-        $this->assertFalse($this->replay->isIncomplete());
-    }
-
-    /**
-     * The method should return true for replays that seem to be incomplete.
-     */
-    public function testIsIncompleteWithIncomplete()
-    {
-        $replay = (new ReplayLoader)->fromFile(self::REPLAY_INCOMPLETE);
-        $this->assertTrue($replay->isIncomplete());
-    }
-}
+        it('returns 1.1 for 1.1 replays', function() {
+            $replay = Replay::load(sample(REPLAY_11_FAST));
+            expect($replay->version)->toBe('1.1');
+        });
+    });
+});

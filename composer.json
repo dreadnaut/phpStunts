@@ -2,7 +2,9 @@
     "name": "dreadnaut/phpstunts",
     "description": "phpStunts is a set of tools to read and handle information related to Stunts/4D Sport Driving data files.",
     "type": "library",
+    "version": "1.0.0",
 
+    "license": "GPL-3.0-or-later",
     "authors": [
         {
             "name": "dreadnaut",
@@ -11,24 +13,31 @@
     ],
     
     "autoload": {
-        "psr-4": { "phpStunts\\": [ "src/" ] }
+        "psr-4": { "PhpStunts\\": [ "src/" ] }
     },
     
     "require": {
+        "php": ">=8.1"
     },
 
     "require-dev": {
-        "phpunit/phpunit": "^7.2",
-        "mikey179/vfsStream": "^1.6",
-        "phpstan/phpstan": "^0.10.2",
-        "squizlabs/php_codesniffer": "^3.3"
+        "mikey179/vfsstream": "^1.6",
+        "phpstan/phpstan": "^1.10",
+        "squizlabs/php_codesniffer": "^3.7",
+        "pestphp/pest": "^2.9",
+        "pestphp/pest-plugin-drift": "^2.0"
     },
 
     "scripts": {
       "test": [
         "phpcs",
         "phpstan analyse",
-        "phpunit"
+        "pest"
       ]
+    },
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": false
+        }
     }
 }
