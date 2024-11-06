@@ -24,8 +24,7 @@
         "mikey179/vfsstream": "^1.6",
         "phpstan/phpstan": "^1.10",
         "squizlabs/php_codesniffer": "^3.7",
-        "pestphp/pest": "^2.9",
-        "pestphp/pest-plugin-drift": "^2.0"
+        "pestphp/pest": "^2.9"
     },
 
     "scripts": {
